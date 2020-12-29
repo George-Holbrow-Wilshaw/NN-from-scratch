@@ -1,6 +1,7 @@
 import numpy as np
 import activation_functions as af
 
+
 class SequentialNetwork:
 
     def __init__(self, layers):
@@ -30,27 +31,42 @@ class NeuralNetwork:
         self.n_nodes_input = self.input_shape[0]
         self.n_nodes_output = layers[-1].output_shape
 
-        # We need to initialise the weights and biases for our NN
-        self.init_weights = np.random.rand(self.n_nodes_input, self.n_nodes_hidden)
-        self.init_bias = np.random.rand(self.n_nodes_hidden)
+        # Produce weights and activation caches 
+        
+        self.input_weights = np.random.rand(self.n_nodes_input, self.layers[1].n_nodes)
+        self.input_bias = np.random.rand(self.layers[2].n_nodes)
+        self.input_activation = np.zeros(shape = (self.n_nodes_input))
 
-        self.hidden_weights = np.random.rand(self.n_nodes_hidden, self.n_nodes_hidden, self.n_layers_hidden - 1)
-        self.hidden_bias = np.random.rand(self.n_nodes_hidden, self.n_layers_hidden - 1)
+        self.weight_cache = [self.input_weights]
+        self.bias_cache = [self.input_bias]
+        self.activation_cache = [self.input_activation]
 
-        self.output_weights = np.random.rand(self.n_nodes_hidden, self.n_nodes_output)
-        self.output_bias = np.random.rand(self.n_nodes_output)
+        for l in range(1, len(layers)):
+            current_layer = self.layers[l]
+
+            try:
+                next_layer = self.layers[l + 1]
+            except:
+                next_layer = current_layer
+
+            layer_weights = np.random.rand(current_layer.n_nodes, next_layer.n_nodes)
+            layer_bias = np.random.rand(current_layer.n_nodes)
+            layer_activation = np.zeros(shape = (current_layer.n_nodes))
+
+            self.weight_cache.append(layer_weights)
+            self.bias_cache.append(layer_bias)
+            self.activation_cache.append(layer_activation)
+        
+        self.activation_cache.append(np.zeros(shape = self.layers[-1].n_nodes))
 
     def forward_propogate(self, training_data, a_hidden):
 
-        data = training_data
+        self.activation_cache[0] = training_data
 
         for l in enumerate(self.layers):
-            if l[0] == 0:
-                 l[1].call_layer(data, self.init_weights, self.init_bias)
-            elif l[1] < (self.n_layers - 1):
-                 l[1].call_layer(a_hidden, self.hidden_weights, self.hidden_bias)
-            else:
-                 l[1].call_layer(a_hidden, self.output_weights, self.output_bias)
+            layer_n = l[0]
+            layer = l[1]
+            layer.call_layer(self.activation_cache, self.weight_cache, self.bias_cache, layer_n)
 
 
     def back_propogate(self):
@@ -72,8 +88,7 @@ class NeuralNetwork:
         # Propogate through each layer
         self.forward_propogate(training_data, self.a_hidden)
 
-        # Print output answer
-        print(a[:, :, 1])
+        print(self.activation_cache)
 
     def predict(self):
         pass
@@ -88,13 +103,16 @@ class FullyConnectedLayer:
         self.n_nodes = n_nodes
         self.activation_function = activation_function
 
-    def call_layer(self, data, weights, bias, z_hidden, activation_function, layer_number = 0):
+    def call_layer(self, data, weights, bias, layer_number = 0):
+        layer_weights = weights[layer_number]
+        layer_bias = bias[layer_number]
+        layer_data = data[layer_number]
 
-        z = np.dot(data, weights) + bias
-        a = getattr(af.ActivationFunction, activation_function)(z)
+        z = np.dot(layer_data, layer_weights) + layer_bias
+        a = getattr(af.ActivationFunction, self.activation_function)(None, z)
 
-        weights[:, :, layer_number] = z
-        data[:, :, layer_number] = a
+        data[layer_number + 1] = a
+        
 
 
 
@@ -112,12 +130,17 @@ class ConvolutionLayer:
         pass
 
 
-
 net = SequentialNetwork([
-    FullyConnectedLayer(16, input_shape = (3, ), activation_function =  'relu'),
-    FullyConnectedLayer(16, input_shape = (3, ), activation_function =  'relu')
+    FullyConnectedLayer(7, input_shape = (7, ), activation_function =  'sigmoid'),
+    FullyConnectedLayer(16, input_shape = (3, ), activation_function =  'sigmoid'),
+    FullyConnectedLayer(16, input_shape = (3, ), activation_function =  'sigmoid')
 ])
 
-net.compile(optimiser = 'adam',
+net = net.compile(optimiser = 'adam',
            loss_function = 'cross_entropy',
            metrics = 'accuracy')
+
+
+train_data = np.array([0, 1, 1, 0, 0, 1, 0])
+
+net.fit(training_data = train_data, validation_data = train_data, metrics='bel')

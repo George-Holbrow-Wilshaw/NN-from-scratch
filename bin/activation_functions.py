@@ -7,7 +7,7 @@ class ActivationFunction:
         return(s)
 
     def relu(self, x):
-        r = max(0, x)
+        r = np.maximum(0, x)
         return(r)
 
     def softmax(self, x):
