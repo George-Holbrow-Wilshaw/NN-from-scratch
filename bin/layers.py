@@ -1,5 +1,6 @@
 import numpy as np
 import activation_functions as af
+import loss_functions as lf
 
 
 class SequentialNetwork:
@@ -12,7 +13,7 @@ class SequentialNetwork:
                             optimiser = optimiser, 
                             loss_function = loss_function, 
                             metrics = metrics)
-        return(net)
+        return net
 
     def summary(self):
         for l in self.layers:
@@ -30,68 +31,95 @@ class NeuralNetwork:
         self.n_nodes_hidden = sum([l.n_nodes for l in layers[1:]])
         self.n_nodes_input = self.input_shape[0]
         self.n_nodes_output = layers[-1].output_shape
+        self.input_layer = layers[0]
+        self.output_layer = layers[-1]
 
         # Produce weights and activation caches 
         
-        self.input_weights = np.random.rand(self.n_nodes_input, self.layers[1].n_nodes)
-        self.input_bias = np.random.rand(self.layers[2].n_nodes)
-        self.input_activation = np.zeros(shape = (self.n_nodes_input))
+        self.activation_cache = []
+        self.bias_cache = []
+        self.weight_cache = []
 
-        self.weight_cache = [self.input_weights]
-        self.bias_cache = [self.input_bias]
-        self.activation_cache = [self.input_activation]
+        for l in range(len(layers)):
+            current_layer = layers[l]
+            depth = l
 
-        for l in range(1, len(layers)):
-            current_layer = self.layers[l]
+            self.activation_cache.append(np.zeros(shape = (current_layer.n_nodes)))
 
-            try:
-                next_layer = self.layers[l + 1]
-            except:
-                next_layer = current_layer
+            if (depth > 0):
+                prev_layer = layers[l - 1]
+                self.bias_cache.append(np.random.rand(current_layer.n_nodes))
+                self.weight_cache.append(np.random.rand(prev_layer.n_nodes, current_layer.n_nodes))
 
-            layer_weights = np.random.rand(current_layer.n_nodes, next_layer.n_nodes)
-            layer_bias = np.random.rand(current_layer.n_nodes)
-            layer_activation = np.zeros(shape = (current_layer.n_nodes))
+        self.z_cache = self.activation_cache
 
-            self.weight_cache.append(layer_weights)
-            self.bias_cache.append(layer_bias)
-            self.activation_cache.append(layer_activation)
-        
-        self.activation_cache.append(np.zeros(shape = self.layers[-1].n_nodes))
-
-    def forward_propogate(self, training_data, a_hidden):
+    def forward_propogate(self, training_data):
 
         self.activation_cache[0] = training_data
 
-        for l in enumerate(self.layers):
+        for l in enumerate(self.layers[:-1]):
             layer_n = l[0]
             layer = l[1]
             layer.call_layer(self.activation_cache, self.weight_cache, self.bias_cache, layer_n)
 
+    def back_propogate(self, labels, activation_cache, z_cache, loss_function):
+        # First we figure out the gradient loss function
+        # This is defined as dC/dW = dZ/dW * dAdZ * dCdA
+        weights_adjustment_cache = [None] * (self.n_layers - 1)
+        bias_adjustment_cache = [None] * (self.n_layers - 1)
 
-    def back_propogate(self):
-        pass
+        deltas = (activation_cache[-1] - labels)* af.delta_sigmoid(z_cache[- 1])
+        dZdW = activation_cache[- 2]
+        dLdW = np.dot(deltas, dZdW)
+        dLdB = deltas
 
-    def calc_loss(self):
-        pass
+        weights_adjustment_cache[-1] = (dLdW)
+        bias_adjustment_cache[-1] = (dLdB)
+        
+        for i in range(self.n_layers - 1, 1, -1):
+
+            deltas = np.dot(self.weight_cache[i - 1], deltas) * af.delta_sigmoid(z_cache[i - 1]).T
+            dZdW = activation_cache[i - 2]
+            dLdW = np.dot(deltas, dZdW)
+            dLdB = deltas
+
+            # Now we adjust our weights by a fraction of this gradient function (the gradient function tells us the direction and proportions we need to reduce the weights)
+            # This is in effect moving down an N dimensional surface 
+            # This reduction will be done in another function, for the mean time we will store the amounts by which we need to reduce our weights
+
+            weights_adjustment_cache[i - 2] = dLdW
+            bias_adjustment_cache[i - 2] = dLdB
+
+        return weights_adjustment_cache, bias_adjustment_cache
+        
+
 
     def produce_metrics(self):
         pass
 
-    def fit(self, training_data, validation_data, metrics):
+    def fit(self, training_data, labels, validation_data, metrics, n_epochs, learning_rate):
         
-        n_training_samples = len(training_data)
+        self.n_training_samples = len(training_data)
         
         # Store intermediate results of activator and activation function outputs
-        self.a_hidden = np.zeros(shape = [n_training_samples, self.n_nodes_hidden, self.n_layers_hidden])
+        self.a_hidden = np.zeros(shape = [self.n_training_samples, self.n_nodes_hidden, self.n_layers_hidden])
+        
+        for _ in range(n_epochs):
+            for x in enumerate(training_data):
+                y = labels[x[0]]
+                self.forward_propogate([x[1]])
+                weight_adjustments, bias_adjustments = self.back_propogate(y, self.activation_cache, self.z_cache, lf.categorical_loss_entropy)
+                self.weight_cache = [w - w_adj.T * learning_rate for w, w_adj in zip(self.weight_cache, weight_adjustments)]
+                self.bias_cache = [b - b_adj.T * learning_rate for b, b_adj in zip(self.bias_cache, bias_adjustments)]
 
-        # Propogate through each layer
-        self.forward_propogate(training_data, self.a_hidden)
+        print(self.weight_cache)
 
-        print(self.activation_cache)
+        return(self)
 
-    def predict(self):
-        pass
+    def predict(self, data):
+        
+        self.forward_propogate(data)
+        print(self.activation_cache[-1])
     
 
 class FullyConnectedLayer:
@@ -109,13 +137,10 @@ class FullyConnectedLayer:
         layer_data = data[layer_number]
 
         z = np.dot(layer_data, layer_weights) + layer_bias
-        a = getattr(af.ActivationFunction, self.activation_function)(None, z)
+        a = self.activation_function(z)
 
-        data[layer_number + 1] = a
+        data[layer_number + 1] = a 
         
-
-
-
 class ConvolutionLayer:
 
     def __init__(self, n_filters, kernel_size, input_shape, activation_function):
@@ -131,9 +156,9 @@ class ConvolutionLayer:
 
 
 net = SequentialNetwork([
-    FullyConnectedLayer(7, input_shape = (7, ), activation_function =  'sigmoid'),
-    FullyConnectedLayer(16, input_shape = (3, ), activation_function =  'sigmoid'),
-    FullyConnectedLayer(16, input_shape = (3, ), activation_function =  'sigmoid')
+    FullyConnectedLayer(2, input_shape = (7, ), activation_function =  af.sigmoid),
+    FullyConnectedLayer(3, input_shape = (3, ), activation_function =  af.sigmoid),
+    FullyConnectedLayer(1, input_shape = (3, ), activation_function =  af.sigmoid)
 ])
 
 net = net.compile(optimiser = 'adam',
@@ -141,6 +166,17 @@ net = net.compile(optimiser = 'adam',
            metrics = 'accuracy')
 
 
-train_data = np.array([0, 1, 1, 0, 0, 1, 0])
 
-net.fit(training_data = train_data, validation_data = train_data, metrics='bel')
+# Testing section
+
+
+train_data = np.array([[0, 0], [1, 0]])
+
+model = net.fit(training_data = train_data,  
+        labels = [1, 0], 
+        validation_data = train_data, 
+        metrics='bel', 
+        n_epochs = 10000, 
+        learning_rate = 5)
+        
+model.predict(train_data[1])
