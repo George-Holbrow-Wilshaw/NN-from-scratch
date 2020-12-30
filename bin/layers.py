@@ -2,7 +2,6 @@ import numpy as np
 import activation_functions as af
 import loss_functions as lf
 
-
 class SequentialNetwork:
 
     def __init__(self, layers):
@@ -161,9 +160,9 @@ net = SequentialNetwork([
     FullyConnectedLayer(1, input_shape = (3, ), activation_function =  af.sigmoid)
 ])
 
-net = net.compile(optimiser = 'adam',
-           loss_function = 'cross_entropy',
-           metrics = 'accuracy')
+net = net.compile(optimiser = 'SGD',
+           loss_function = '',
+           metrics = '')
 
 
 
