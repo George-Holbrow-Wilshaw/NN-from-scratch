@@ -14,8 +14,9 @@ def relu(x):
     r = np.maximum(0, x)
     return r
 
-def softmax(self, x):
-    pass
+def softmax(x):
+    s = np.exp(x - np.max(x))
+    return s / s.sum()
 
 
 

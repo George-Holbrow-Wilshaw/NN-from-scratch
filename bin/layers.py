@@ -1,6 +1,6 @@
 import numpy as np
-import activation_functions as af
-import loss_functions as lf
+import bin.activation_functions as af
+import bin.loss_functions as lf
 
 class SequentialNetwork:
 
@@ -29,7 +29,6 @@ class NeuralNetwork:
         self.n_layers_hidden = len(layers) - 1
         self.n_nodes_hidden = sum([l.n_nodes for l in layers[1:]])
         self.n_nodes_input = self.input_shape[0]
-        self.n_nodes_output = layers[-1].output_shape
         self.input_layer = layers[0]
         self.output_layer = layers[-1]
 
@@ -60,6 +59,8 @@ class NeuralNetwork:
             layer_n = l[0]
             layer = l[1]
             layer.call_layer(self.activation_cache, self.weight_cache, self.bias_cache, layer_n)
+        
+        ## Get last layer to be sigmoid TODO
 
     def back_propogate(self, labels, activation_cache, z_cache, loss_function):
         # First we figure out the gradient loss function
@@ -67,8 +68,9 @@ class NeuralNetwork:
         weights_adjustment_cache = [None] * (self.n_layers - 1)
         bias_adjustment_cache = [None] * (self.n_layers - 1)
 
-        deltas = (activation_cache[-1] - labels)* af.delta_sigmoid(z_cache[- 1])
+        deltas = ((activation_cache[-1] - labels)[0] * af.delta_sigmoid(z_cache[-1])[0]).reshape(self.layers[-1].n_nodes, 1)
         dZdW = activation_cache[- 2]
+
         dLdW = np.dot(deltas, dZdW)
         dLdB = deltas
 
@@ -104,6 +106,7 @@ class NeuralNetwork:
         self.a_hidden = np.zeros(shape = [self.n_training_samples, self.n_nodes_hidden, self.n_layers_hidden])
         
         for _ in range(n_epochs):
+            print(_)
             for x in enumerate(training_data):
                 y = labels[x[0]]
                 self.forward_propogate([x[1]])
@@ -111,15 +114,12 @@ class NeuralNetwork:
                 self.weight_cache = [w - w_adj.T * learning_rate for w, w_adj in zip(self.weight_cache, weight_adjustments)]
                 self.bias_cache = [b - b_adj.T * learning_rate for b, b_adj in zip(self.bias_cache, bias_adjustments)]
 
-        print(self.weight_cache)
-
         return(self)
 
     def predict(self, data):
-        
-        self.forward_propogate(data)
-        print(self.activation_cache[-1])
-    
+        for i in data:
+            a = self.forward_propogate(i)
+            yield a
 
 class FullyConnectedLayer:
 
@@ -154,28 +154,3 @@ class ConvolutionLayer:
         pass
 
 
-net = SequentialNetwork([
-    FullyConnectedLayer(2, input_shape = (7, ), activation_function =  af.sigmoid),
-    FullyConnectedLayer(3, input_shape = (3, ), activation_function =  af.sigmoid),
-    FullyConnectedLayer(1, input_shape = (3, ), activation_function =  af.sigmoid)
-])
-
-net = net.compile(optimiser = 'SGD',
-           loss_function = '',
-           metrics = '')
-
-
-
-# Testing section
-
-
-train_data = np.array([[0, 0], [1, 0]])
-
-model = net.fit(training_data = train_data,  
-        labels = [1, 0], 
-        validation_data = train_data, 
-        metrics='bel', 
-        n_epochs = 10000, 
-        learning_rate = 5)
-        
-model.predict(train_data[1])
