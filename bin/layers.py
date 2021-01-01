@@ -1,6 +1,8 @@
 import numpy as np
 import bin.activation_functions as af
 import bin.loss_functions as lf
+from tqdm import tqdm_notebook as tqdm
+import random
 
 class SequentialNetwork:
 
@@ -31,6 +33,7 @@ class NeuralNetwork:
         self.n_nodes_input = self.input_shape[0]
         self.input_layer = layers[0]
         self.output_layer = layers[-1]
+        self.ouput_activation = self.layers[-1].activation_function
 
         # Produce weights and activation caches 
         
@@ -47,7 +50,7 @@ class NeuralNetwork:
             if (depth > 0):
                 prev_layer = layers[l - 1]
                 self.bias_cache.append(np.random.rand(current_layer.n_nodes))
-                self.weight_cache.append(np.random.rand(prev_layer.n_nodes, current_layer.n_nodes))
+                self.weight_cache.append(np.random.rand(prev_layer.n_nodes, current_layer.n_nodes) / 10)
 
         self.z_cache = self.activation_cache
 
@@ -60,15 +63,23 @@ class NeuralNetwork:
             layer = l[1]
             layer.call_layer(self.activation_cache, self.weight_cache, self.bias_cache, layer_n)
         
-        ## Get last layer to be sigmoid TODO
+        self.activation_cache[-1] = self.ouput_activation(self.activation_cache[-1])
 
     def back_propogate(self, labels, activation_cache, z_cache, loss_function):
+
         # First we figure out the gradient loss function
         # This is defined as dC/dW = dZ/dW * dAdZ * dCdA
         weights_adjustment_cache = [None] * (self.n_layers - 1)
         bias_adjustment_cache = [None] * (self.n_layers - 1)
 
-        deltas = ((activation_cache[-1] - labels)[0] * af.delta_sigmoid(z_cache[-1])[0]).reshape(self.layers[-1].n_nodes, 1)
+
+        if self.ouput_activation == af.softmax:
+            deltas = (activation_cache[-1] - labels).T
+        else:
+            deltas = ((activation_cache[-1] - labels)[0] \
+                * self.ouput_activation(z_cache[-1], prime = True)[0])\
+                .reshape(self.layers[-1].n_nodes, 1)
+
         dZdW = activation_cache[- 2]
 
         dLdW = np.dot(deltas, dZdW)
@@ -79,7 +90,9 @@ class NeuralNetwork:
         
         for i in range(self.n_layers - 1, 1, -1):
 
-            deltas = np.dot(self.weight_cache[i - 1], deltas) * af.delta_sigmoid(z_cache[i - 1]).T
+            layer = self.layers[i - 1]
+            deltas = np.dot(self.weight_cache[i - 1], deltas) \
+                * layer.activation_function(z_cache[i - 1], prime = True).T
             dZdW = activation_cache[i - 2]
             dLdW = np.dot(deltas, dZdW)
             dLdB = deltas
@@ -93,33 +106,62 @@ class NeuralNetwork:
 
         return weights_adjustment_cache, bias_adjustment_cache
         
+    def validate(self, validation_data, validation_labels):
 
+        res = []
+        for x, y in zip(validation_data, validation_labels):
+            self.forward_propogate(x)
+            pred = np.argmax(self.activation_cache[-1])
+            actual = np.argmax(y)
+            r = True if pred == actual else False
+            res.append(r)
+        
+        validation_accuracy = sum(res) / len(validation_data)
+        
+        return validation_accuracy
 
-    def produce_metrics(self):
-        pass
-
-    def fit(self, training_data, labels, validation_data, metrics, n_epochs, learning_rate):
+    def fit(self, training_data, labels, validation_split, metrics, n_epochs, learning_rate):
         
         self.n_training_samples = len(training_data)
         
         # Store intermediate results of activator and activation function outputs
         self.a_hidden = np.zeros(shape = [self.n_training_samples, self.n_nodes_hidden, self.n_layers_hidden])
         
-        for _ in range(n_epochs):
-            print(_)
-            for x in enumerate(training_data):
-                y = labels[x[0]]
+        for _ in tqdm(range(n_epochs)):
+            
+            val_n = random.sample(range(self.n_training_samples - 1), int(validation_split * self.n_training_samples))
+            train_n = list(set(range(self.n_training_samples)) - set(val_n))
+            validation_data = training_data[val_n]
+            validation_labels = labels[val_n]
+            train_data = training_data[train_n]
+            train_labels = labels[train_n]
+
+            print('Training started: Epoch %d' %(_ + 1))
+            epoch_results = []
+            for x in tqdm(enumerate(train_data), total= len(train_data)):
+                y = train_labels[x[0]]
                 self.forward_propogate([x[1]])
                 weight_adjustments, bias_adjustments = self.back_propogate(y, self.activation_cache, self.z_cache, lf.categorical_loss_entropy)
                 self.weight_cache = [w - w_adj.T * learning_rate for w, w_adj in zip(self.weight_cache, weight_adjustments)]
                 self.bias_cache = [b - b_adj.T * learning_rate for b, b_adj in zip(self.bias_cache, bias_adjustments)]
+                prediction = np.argmax(self.activation_cache[-1])
+                decoded_label = np.argmax(y)
+                res = True if prediction == decoded_label else False
 
-        return(self)
+                epoch_results.append(res)
+            epoch_accuracy = sum(epoch_results) / float(self.n_training_samples)
+
+            validation_accuracy = self.validate(validation_data, validation_labels)
+            print('Epoch training accuracy was %f \n' %(epoch_accuracy))
+            print('Epoch validation accuracy was %f \n' %(validation_accuracy))
+        return self
 
     def predict(self, data):
-        for i in data:
-            a = self.forward_propogate(i)
-            yield a
+        prediction_weights = []
+        for sample in data:
+            self.forward_propogate(sample)
+            prediction_weights.append(self.activation_cache[-1])
+        return prediction_weights
 
 class FullyConnectedLayer:
 
@@ -152,5 +194,3 @@ class ConvolutionLayer:
 
     def call_layer(self):
         pass
-
-
