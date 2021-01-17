@@ -3,7 +3,7 @@ import bin.activation_functions as af
 import bin.loss_functions as lf
 from tqdm import tqdm_notebook as tqdm
 import random
-
+git 
 class SequentialNetwork:
 
     def __init__(self, layers):
@@ -184,13 +184,21 @@ class FullyConnectedLayer:
         
 class ConvolutionLayer:
 
-    def __init__(self, n_filters, kernel_size, input_shape, activation_function):
+    def __init__(self, n_filters, kernel_size, input_shape, activation_function, pad = 0):
         self.name = 'ConvolutionLayer'
         self.input_shape = input_shape
-        self.output_shape = 'tbd'
         self.kernel_size = kernel_size
         self.n_filters = n_filters
         self.activation_function = activation_function
+        self.input_volume = input_shape[0] * input_shape[1]
+        self.output_dims = ((self.input_volume - kernel_size + 2 * pad) / stride) + 1
+        self.output_shape = (self.output_dims, self.output_dims, n_filters)
+
+    def form_kernel(self, kernel_size):
+
+
+    def convolve(input, kernel):
+
 
     def call_layer(self):
         pass
